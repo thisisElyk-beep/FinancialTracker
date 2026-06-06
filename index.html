@@ -555,6 +555,24 @@ input.bamt-num:focus { border-color: #4A90D9; background: var(--color-background
 .income-scenario-input { background:#FEF9C3!important;border-color:#FEF08A!important; }
 
 
+
+/* ── TAG POPOVER ── */
+.btag-btn { background:none;border:0.5px solid #DDDDDA;border-radius:6px;padding:2px 5px;cursor:pointer;font-size:11px;color:#AAAAAA;flex-shrink:0;line-height:1.4;transition:all 0.15s; }
+.btag-btn:hover { border-color:#999990;color:#555550; }
+.btag-popover { display:none;position:absolute;right:0;top:28px;z-index:200;background:#fff;border:0.5px solid var(--color-border-secondary);border-radius:10px;padding:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);min-width:140px; }
+.btag-popover.open { display:block; }
+.btag-popover-row { display:flex;align-items:center;justify-content:space-between;padding:4px 0;gap:12px; }
+.btag-popover-label { font-size:12px;color:#555550; }
+.btag-toggle { width:32px;height:18px;border-radius:9px;border:none;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0; }
+.btag-toggle::after { content:'';position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;top:3px;transition:left 0.2s; }
+.btag-toggle.off { background:#DDDDDA; }
+.btag-toggle.off::after { left:3px; }
+.btag-toggle.on  { }
+.btag-toggle.on::after  { left:17px; }
+.btag-toggle-pool.on  { background:#1D7A54; }
+.btag-toggle-debt.on  { background:#922B21; }
+.btag-toggle-req.on   { background:#92400E; }
+.bcard-tag-wrap { position:relative;display:flex;align-items:center;gap:4px;flex-shrink:0; }
 /* ── SUBSCRIPTION LINE ITEMS ── */
 .sub-items-wrap { margin-top:8px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px; }
 .sub-item { display:flex;align-items:center;gap:6px;margin-bottom:5px; }
@@ -1330,7 +1348,7 @@ function monthsToGoal(g){
 }
 function timelineStr(m){if(!m||!isFinite(m))return m===0?'Done!':'—';if(m<1)return '<1 mo';const y=Math.floor(m/12),mo=Math.round(m%12);return y===0?mo+'mo':y+'yr'+(mo?' '+mo+'mo':'');}
 function totalGoalAlloc(){return S.goals.filter(g=>g.type!=='loan').reduce((s,g)=>s+(+g.monthlyAlloc||0),0);}
-function closeAllPickers(){document.querySelectorAll('.inline-emoji-picker,.gpicker-wrap').forEach(p=>p.style.display='none');}
+function closeAllPickers(){document.querySelectorAll('.inline-emoji-picker,.gpicker-wrap').forEach(p=>p.style.display='none');document.querySelectorAll('.btag-popover.open').forEach(p=>p.classList.remove('open'));}
 function maxLogged(){return S.goals.length?Math.max(...S.goals.map(g=>+g.monthsLogged||0)):0;}
 
 function buildCombinedSegs(){
@@ -2204,9 +2222,9 @@ function bucketCard(b,ci,who,income,showShare,sortMode){
   const amt=+b.amt||0,pct=income>0?Math.min(100,Math.round(amt/income*100)):0;
   const r=getRatio();const m=getMult();const p=getPl();
   const shareNote=showShare?`<span class="bshare-note">K: ${fmt(Math.round(amt*r.k*m))} · L: ${fmt(Math.round(amt*r.l*m))}</span>`:'';
-  const savTag=who!=='shared'?`<button class="b-tag b-tag-pool${isSav?' b-tag-on':''}" data-btag="sav" data-bid="${b.id}" data-bwho="${who}">${isSav?'pool':'+ pool'}</button>`:''
-  const debtTag=who!=='shared'?`<button class="b-tag b-tag-debt${isDebt?' b-tag-on':''}" data-btag="debt" data-bid="${b.id}" data-bwho="${who}">${isDebt?'debt':'+ debt'}</button>`:''
-  const reqTag=who!=='shared'?`<button class="b-tag b-tag-req${isReq?' b-tag-on':''}" data-btag="req" data-bid="${b.id}" data-bwho="${who}">${isReq?'required':'+ required'}</button>`:'';
+  const savTag=isSav?`<button class="b-tag b-tag-pool" data-btag="sav" data-bid="${b.id}" data-bwho="${who}">pool</button>`:'';
+  const debtTag=isDebt?`<button class="b-tag b-tag-debt" data-btag="debt" data-bid="${b.id}" data-bwho="${who}">debt</button>`:'';
+  const reqTag=isReq?`<button class="b-tag b-tag-req" data-btag="req" data-bid="${b.id}" data-bwho="${who}">required</button>`:'';
   const pickerGrid=ALL_ICONS.map(ic=>{const paths=SVG_ICONS[ic]||SVG_ICONS['ti-wallet'];return`<button class="emoji-opt" data-pick="${ic}" data-pid="${b.id}" data-pwho="${who}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="pointer-events:none">${paths}</svg></button>`;}).join('');
   const handle=sortMode==='manual'?`<span class="drag-handle" title="Drag to reorder">⠿</span>`:'';
   return `<div class="bcard${isSav?' savings-card':isDebt?' debt-card':isReq?' req-card':who==='shared'?' shared-card':''}" data-id="${b.id}" data-who="${who}" draggable="${sortMode==='manual'?'true':'false'}">
@@ -2215,7 +2233,24 @@ function bucketCard(b,ci,who,income,showShare,sortMode){
       <button class="bemoji-btn" data-eid="${b.id}" data-ewho="${who}">${renderIcon(b.id,b.name,16)}</button>
       <span class="bname-label" data-id="${b.id}" data-who="${who}">${b.name}</span>
       <input class="bname-input" type="text" value="${b.name}" data-id="${b.id}" data-who="${who}" autocomplete="off" spellcheck="false" />
-      ${savTag}${debtTag}${reqTag}
+      <div class="bcard-tag-wrap" id="tagwrap-${b.id}">
+        ${savTag}${debtTag}${reqTag}
+        <button class="btag-btn" data-tagbtn="${b.id}" data-bwho="${who}">tag</button>
+        <div class="btag-popover" id="tagpop-${b.id}">
+          <div class="btag-popover-row">
+            <span class="btag-popover-label">Pool</span>
+            <button class="btag-toggle btag-toggle-pool ${isSav?'on':'off'}" data-btag="sav" data-bid="${b.id}" data-bwho="${who}"></button>
+          </div>
+          <div class="btag-popover-row">
+            <span class="btag-popover-label">Debt</span>
+            <button class="btag-toggle btag-toggle-debt ${isDebt?'on':'off'}" data-btag="debt" data-bid="${b.id}" data-bwho="${who}"></button>
+          </div>
+          <div class="btag-popover-row">
+            <span class="btag-popover-label">Required</span>
+            <button class="btag-toggle btag-toggle-req ${isReq?'on':'off'}" data-btag="req" data-bid="${b.id}" data-bwho="${who}"></button>
+          </div>
+        </div>
+      </div>
       <div class="bamt-wrap"><span>$</span><input class="bamt-num" type="number" value="${amt}" min="0" step="10" data-id="${b.id}" data-who="${who}" ${isSubBucket&&b.items&&b.items.length?'readonly style="background:#F5F5F0;color:#999990;cursor:default"':''} /></div>
       <span class="bpct-lbl">/${p}</span>
       <button class="bdel" data-del="${b.id}" data-who="${who}">×</button>
@@ -2257,16 +2292,41 @@ function attachBucketListeners(){
   });
   document.querySelectorAll('.bemoji-btn[data-eid]').forEach(btn=>{btn.onclick=function(e){e.stopPropagation();const id=this.dataset.eid;const picker=document.getElementById('picker-'+id);if(!picker)return;const isOpen=picker.style.display==='block';closeAllPickers();if(!isOpen)picker.style.display='block';};});
   document.querySelectorAll('.epick-close').forEach(btn=>{btn.onclick=function(e){e.stopPropagation();const p=document.getElementById('picker-'+this.dataset.closepicker);if(p)p.style.display='none';};});
-  // Bucket tag toggles (pool / debt / required)
-  document.querySelectorAll('[data-btag]').forEach(btn=>{
+  // Tag popover open/close
+  document.querySelectorAll('[data-tagbtn]').forEach(btn=>{
+    btn.onclick=function(e){
+      e.stopPropagation();
+      const pop=document.getElementById('tagpop-'+this.dataset.tagbtn);
+      if(!pop)return;
+      const isOpen=pop.classList.contains('open');
+      // Close all other popovers
+      document.querySelectorAll('.btag-popover.open').forEach(p=>p.classList.remove('open'));
+      if(!isOpen)pop.classList.add('open');
+    };
+  });
+  // Tag toggle switches (inside popover)
+  document.querySelectorAll('.btag-toggle').forEach(btn=>{
     btn.onclick=function(e){
       e.stopPropagation();
       const b=findB(this.dataset.bid,this.dataset.bwho);
       if(!b)return;
       const tag=this.dataset.btag;
-      if(tag==='sav')b.isSavings=!b.isSavings;
-      else if(tag==='debt')b.isDebt=!b.isDebt;
-      else if(tag==='req')b.isRequired=!b.isRequired;
+      if(tag==='sav'){b.isSavings=!b.isSavings;this.classList.toggle('on',b.isSavings);this.classList.toggle('off',!b.isSavings);}
+      else if(tag==='debt'){b.isDebt=!b.isDebt;this.classList.toggle('on',b.isDebt);this.classList.toggle('off',!b.isDebt);}
+      else if(tag==='req'){b.isRequired=!b.isRequired;this.classList.toggle('on',b.isRequired);this.classList.toggle('off',!b.isRequired);}
+      scheduleSave();renderActive();
+    };
+  });
+  // Active tag badges (click to remove)
+  document.querySelectorAll('[data-btag].b-tag').forEach(btn=>{
+    btn.onclick=function(e){
+      e.stopPropagation();
+      const b=findB(this.dataset.bid,this.dataset.bwho);
+      if(!b)return;
+      const tag=this.dataset.btag;
+      if(tag==='sav')b.isSavings=false;
+      else if(tag==='debt')b.isDebt=false;
+      else if(tag==='req')b.isRequired=false;
       scheduleSave();renderActive();
     };
   });
