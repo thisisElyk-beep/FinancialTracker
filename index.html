@@ -372,6 +372,14 @@ input.bamt-num:focus { border-color: #4A90D9; background: var(--color-background
 }
 .split-info b { font-weight: 500; color: var(--color-text-secondary); }
 .split-info-text { flex:1; }
+.split-mode-toggle { display:flex;gap:0;border:0.5px solid var(--color-border-tertiary);border-radius:7px;overflow:hidden;flex-shrink:0; }
+.split-mode-btn { font-size:11px;padding:3px 9px;border:none;background:var(--color-background-primary);color:#999990;cursor:pointer;font-family:var(--font-sans);font-weight:500;transition:all 0.15s; }
+.split-mode-btn.active { background:#1A1A1A;color:#fff; }
+.split-manual-row { display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:#FEF9C3;border:0.5px solid #FEF08A;border-radius:8px; }
+.split-manual-label { font-size:12px;color:#A16207;font-weight:500;flex-shrink:0; }
+.split-manual-input { width:48px;font-size:13px;padding:3px 6px;border:0.5px solid #D4D4AA;border-radius:6px;text-align:center;font-family:var(--font-sans);background:#fff; }
+.split-manual-input:focus { outline:none;border-color:#A16207; }
+.split-manual-sep { font-size:13px;color:#A16207; }
 
 /* ── SPLIT RATIO TOOLTIP ── */
 .ratio-tooltip-wrap { position:relative; display:inline-flex; align-items:center; }
@@ -1071,6 +1079,8 @@ const REQUIRED_KW=['insurance','phone','mobile','internet'];
 
 const DEFAULTS={
   period:'monthly',
+  splitMode:'auto',
+  manualKylePct:50,
   kyle:{income:6700,loan:700},
   lian:{income:6700,loan:0},
   kyleSort:'manual',
@@ -1240,6 +1250,10 @@ function fmtK(n){return n>=1000?'$'+(n/1000).toFixed(0)+'K':'$'+Math.round(n);}
 function getMult(){return 1;}
 function getPl(){return S.period==='annual'?'yr':'mo';}
 function getRatio(){
+  if(S.splitMode==='manual'){
+    const k=Math.max(0,Math.min(100,+S.manualKylePct||50))/100;
+    return {k,l:1-k};
+  }
   const kFixed=S.kyle_personal.filter(b=>b.isDebt||b.isRequired).reduce((s,b)=>s+(+b.amt||0),0);
   const lFixed=S.lian_personal.filter(b=>b.isDebt||b.isRequired).reduce((s,b)=>s+(+b.amt||0),0);
   const km=Math.max(0,getIncome('kyle')-kFixed);
@@ -2915,11 +2929,23 @@ function renderCombined(){
       </div>
       <div class="split-info">
         <span class="split-info-text">Split: <b>Kyle ${Math.round(r.k*100)}%</b> / <b>Lian ${Math.round(r.l*100)}%</b> · Combined: <b>${fmt(ci*m)} / ${p}</b></span>
+        <div class="split-mode-toggle">
+          <button class="split-mode-btn ${S.splitMode!=='manual'?'active':''}" data-splitmode="auto">Auto</button>
+          <button class="split-mode-btn ${S.splitMode==='manual'?'active':''}" data-splitmode="manual">Manual</button>
+        </div>
         <span class="ratio-tooltip-wrap">
           <span class="ratio-info-icon">i</span>
-          <span class="ratio-tooltip-box">Split is calculated from take-home minus debt obligations.<br>Kyle: ${fmt(S.kyle.income)} &minus; ${fmt(S.kyle_personal.filter(b=>b.isDebt).reduce((s,b)=>s+(+b.amt||0),0))} = ${fmt(Math.max(0,S.kyle.income-S.kyle_personal.filter(b=>b.isDebt).reduce((s,b)=>s+(+b.amt||0),0)))}<br>Lian: ${fmt(S.lian.income)} &minus; ${fmt(S.lian_personal.filter(b=>b.isDebt).reduce((s,b)=>s+(+b.amt||0),0))} = ${fmt(Math.max(0,S.lian.income-S.lian_personal.filter(b=>b.isDebt).reduce((s,b)=>s+(+b.amt||0),0)))}<br>Ratio: ${Math.round(r.k*100)}% / ${Math.round(r.l*100)}%</span>
+          <span class="ratio-tooltip-box">${S.splitMode==='manual'?'Manual split — you set the percentages.':'Auto split is calculated from take-home minus debts and required costs.'}<br>Ratio: ${Math.round(r.k*100)}% / ${Math.round(r.l*100)}%</span>
         </span>
       </div>
+      ${S.splitMode==='manual'?`<div class="split-manual-row">
+        <span class="split-manual-label">Kyle</span>
+        <input type="number" class="split-manual-input" id="manual-kyle-pct" min="0" max="100" value="${+S.manualKylePct||50}" />
+        <span class="split-manual-sep">% /</span>
+        <span class="split-manual-label">Lian</span>
+        <input type="number" class="split-manual-input" id="manual-lian-pct" min="0" max="100" value="${100-(+S.manualKylePct||50)}" />
+        <span class="split-manual-sep">%</span>
+      </div>`:''}
       ${summaryBlock(total,rem,over,pct,'#27AE60',kt,lt,true)}
       <div class="chart-section" style="margin-top:10px">
         <div class="chart-wrap"><canvas id="chart-combined"></canvas><div class="donut-center"><div class="dc-label">left over</div><div class="dc-val ${over?'neg':''}">${over?'-':''}${fmt(Math.abs(rem))}</div></div></div>
@@ -2941,6 +2967,33 @@ function renderCombined(){
   setTimeout(()=>makeDonut('chart-combined',segs.filter(s=>s.v>0),remaining),50);
   attachBucketListeners();
   attachDragSort('shared');
+
+  // Split mode toggle (auto/manual)
+  document.querySelectorAll('[data-splitmode]').forEach(btn=>{
+    btn.onclick=function(){
+      S.splitMode=this.dataset.splitmode;
+      scheduleSave();renderActive();
+    };
+  });
+  // Manual split inputs — Kyle and Lian mirror each other to sum 100
+  const mk=document.getElementById('manual-kyle-pct');
+  const ml=document.getElementById('manual-lian-pct');
+  if(mk)mk.oninput=function(){
+    let v=Math.max(0,Math.min(100,parseFloat(this.value)||0));
+    S.manualKylePct=v;
+    if(ml&&document.activeElement!==ml)ml.value=100-v;
+    clearTimeout(window._splitTimer);
+    window._splitTimer=setTimeout(()=>renderActive(),600);
+    scheduleSave();
+  };
+  if(ml)ml.oninput=function(){
+    let v=Math.max(0,Math.min(100,parseFloat(this.value)||0));
+    S.manualKylePct=100-v;
+    if(mk&&document.activeElement!==mk)mk.value=100-v;
+    clearTimeout(window._splitTimer);
+    window._splitTimer=setTimeout(()=>renderActive(),600);
+    scheduleSave();
+  };
 }
 
 function closeAllSections(){
