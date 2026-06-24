@@ -589,6 +589,26 @@ input.bamt-num:focus { border-color: #4A90D9; background: var(--color-background
 .btag-toggle-debt.on  { background:#922B21; }
 .btag-toggle-req.on   { background:#92400E; }
 .bcard-tag-wrap { position:relative;display:flex;align-items:center;gap:4px;flex-shrink:0; }
+
+/* ── FUN BANK ── */
+.funbank-card { background:linear-gradient(135deg,#FFFBEB,#FEF3C7);border:0.5px solid #FCD34D;border-radius:var(--border-radius-lg);padding:14px 16px;margin-top:12px; }
+.funbank-top { display:flex;align-items:center;justify-content:space-between;margin-bottom:8px; }
+.funbank-title { font-size:13px;font-weight:600;color:#92400E;display:flex;align-items:center;gap:6px; }
+.funbank-balance { font-size:24px;font-weight:700;color:#78350F;letter-spacing:-0.5px;margin-bottom:2px; }
+.funbank-sub { font-size:11px;color:#B45309;margin-bottom:10px; }
+.funbank-actions { display:flex;gap:6px; }
+.funbank-btn { font-size:12px;padding:6px 12px;border-radius:7px;border:0.5px solid #D97706;background:#fff;color:#B45309;cursor:pointer;font-family:var(--font-sans);font-weight:500;transition:all 0.15s; }
+.funbank-btn:hover { background:#FFFBEB; }
+.funbank-withdraw-form { display:none;margin-top:10px;padding:10px;background:rgba(255,255,255,0.6);border-radius:8px; }
+.funbank-withdraw-form.open { display:block; }
+.funbank-wf-row { display:flex;align-items:center;gap:6px;margin-bottom:6px; }
+.funbank-wf-input { flex:1;font-size:13px;padding:5px 8px;border:0.5px solid #FCD34D;border-radius:6px;font-family:var(--font-sans);background:#fff; }
+.funbank-wf-input:focus { outline:none;border-color:#D97706; }
+.funbank-history { margin-top:10px;border-top:0.5px solid #FCD34D;padding-top:8px; }
+.funbank-hist-row { display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;color:#92400E; }
+.funbank-hist-amt-pos { color:#15803D;font-weight:600; }
+.funbank-hist-amt-neg { color:#B91C1C;font-weight:600; }
+.funbank-toggle-row { display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px; }
 /* ── SUBSCRIPTION LINE ITEMS ── */
 .sub-items-wrap { margin-top:8px;border-top:0.5px solid var(--color-border-tertiary);padding-top:8px; }
 .sub-item { display:flex;align-items:center;gap:6px;margin-bottom:5px; }
@@ -1081,6 +1101,8 @@ const DEFAULTS={
   period:'monthly',
   splitMode:'auto',
   manualKylePct:50,
+  funBankEnabled:false,
+  funBank:{kyle:{balance:0,history:[]},lian:{balance:0,history:[]}},
   kyle:{income:6700,loan:700},
   lian:{income:6700,loan:0},
   kyleSort:'manual',
@@ -1647,10 +1669,29 @@ function logThisMonth(retroMonthsBack=0){
       g.monthsLogged=(+g.monthsLogged||0)+1;
     }
   });
+  // Fun Bank accrual — only when enabled
+  if(S.funBankEnabled){
+    if(!S.funBank)S.funBank={kyle:{balance:0,history:[]},lian:{balance:0,history:[]}};
+    const loggedYM=S.lastLoggedYearMonth;
+    ['kyle','lian'].forEach(who=>{
+      const personal=who==='kyle'?S.kyle_personal:S.lian_personal;
+      const psBucket=personal.find(b=>b.name.toLowerCase().includes('personal spend'));
+      if(!psBucket)return;
+      const alloc=+psBucket.amt||0;
+      const spent=bucketSpent(psBucket.id,loggedYM,who);
+      const leftover=Math.max(0,alloc-spent);
+      if(leftover>0){
+        if(!S.funBank[who])S.funBank[who]={balance:0,history:[]};
+        S.funBank[who].balance=(+S.funBank[who].balance||0)+leftover;
+        S.funBank[who].history.unshift({ym:loggedYM,type:'accrual',amt:leftover,date:new Date().toISOString()});
+        if(S.funBank[who].history.length>50)S.funBank[who].history.pop();
+      }
+    });
+  }
   if(!S.netWorthHistory)S.netWorthHistory=[];
   S.netWorthHistory.push({ym:S.lastLoggedYearMonth,nw:calcNetWorth()});
   if(S.netWorthHistory.length>24)S.netWorthHistory.shift();
-  save();renderGoals();
+  save();renderGoals();renderActive();
   const intensity=goalCompleted?2.5:Math.min(2,(S.streakCount||1)*0.25+0.75);
   launchConfetti(intensity);
   showReview(savedToGoals,principalPaid,interestCost,prevNetWorth);
@@ -1845,6 +1886,13 @@ function renderGoals(){
     <div class="log-strip">
       <span class="log-strip-text">${ml>0?ml+' month'+(ml!==1?'s':'')+' logged':'No months logged yet'}</span>
       <button class="reset-btn" id="reset-btn">Reset progress</button>
+    </div>
+    <div class="funbank-toggle-row">
+      <div>
+        <div style="font-size:13px;font-weight:500;color:#1A1A1A">Fun Bank</div>
+        <div style="font-size:11px;color:#999990;margin-top:1px">Roll unused personal spend into a flexible balance</div>
+      </div>
+      <button class="btag-toggle ${S.funBankEnabled?'on btag-toggle-req':'off'}" id="funbank-toggle"></button>
     </div>
     <div class="networth-card">
       <div class="nw-label">Household Net Worth</div>
@@ -2093,6 +2141,12 @@ function attachGoalListeners(){
   });
 
   const logBtn=document.getElementById('log-month-btn');if(logBtn)logBtn.addEventListener('click',()=>logThisMonth(0));
+  // Fun Bank master toggle
+  const fbToggle=document.getElementById('funbank-toggle');
+  if(fbToggle)fbToggle.onclick=function(){
+    S.funBankEnabled=!S.funBankEnabled;
+    scheduleSave();renderActive();
+  };
   const retroBtn=document.getElementById('retrolog-btn');
   if(retroBtn)retroBtn.addEventListener('click',()=>{
     const form=document.getElementById('retrolog-form');
@@ -2353,6 +2407,30 @@ function attachBucketListeners(){
     };
   });
 
+  // Fun Bank withdraw
+  document.querySelectorAll('[data-fbwithdraw]').forEach(btn=>{
+    btn.onclick=function(){
+      const form=document.getElementById('fb-wf-'+this.dataset.fbwithdraw);
+      if(form){form.classList.toggle('open');if(form.classList.contains('open'))form.querySelector('input')?.focus();}
+    };
+  });
+  document.querySelectorAll('[data-fbconfirm]').forEach(btn=>{
+    btn.onclick=function(){
+      const who=this.dataset.fbconfirm;
+      const amtInp=document.getElementById('fb-amt-'+who);
+      const noteInp=document.getElementById('fb-note-'+who);
+      const amt=parseFloat(amtInp.value)||0;
+      if(amt<=0)return;
+      if(!S.funBank[who])S.funBank[who]={balance:0,history:[]};
+      const bal=+S.funBank[who].balance||0;
+      const withdraw=Math.min(amt,bal);
+      S.funBank[who].balance=bal-withdraw;
+      S.funBank[who].history.unshift({ym:currentYM(),type:'withdrawal',amt:withdraw,note:noteInp.value||'',date:new Date().toISOString()});
+      if(S.funBank[who].history.length>50)S.funBank[who].history.pop();
+      scheduleSave();renderActive();
+    };
+  });
+
   // Scenario income toggles
   ['kyle','lian'].forEach(who=>{
     const btn=document.getElementById('whatif-income-'+who);
@@ -2521,6 +2599,44 @@ function posNetWorthDateStr(){
   const d=new Date();
   d.setMonth(d.getMonth()+months);
   return d.toLocaleString('default',{month:'long',year:'numeric'});
+}
+
+function renderFunBank(who){
+  if(!S.funBankEnabled)return '';
+  if(!S.funBank)S.funBank={kyle:{balance:0,history:[]},lian:{balance:0,history:[]}};
+  if(!S.funBank[who])S.funBank[who]={balance:0,history:[]};
+  const fb=S.funBank[who];
+  const bal=+fb.balance||0;
+  const name=who==='kyle'?'Kyle':'Lian';
+  const histHTML=(fb.history||[]).slice(0,5).map(h=>{
+    const monthLabel=h.ym?new Date(h.ym+'-02').toLocaleString('default',{month:'short',year:'2-digit'}):'';
+    const isPos=h.type==='accrual';
+    return `<div class="funbank-hist-row">
+      <span>${isPos?'Rolled over':'Withdrew'}${h.note?' · '+h.note:''} ${monthLabel?'· '+monthLabel:''}</span>
+      <span class="${isPos?'funbank-hist-amt-pos':'funbank-hist-amt-neg'}">${isPos?'+':'-'}${fmt(h.amt)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="funbank-card">
+    <div class="funbank-top">
+      <span class="funbank-title">${renderIcon(null,'wallet',15,'#92400E')} Fun Bank</span>
+    </div>
+    <div class="funbank-balance">${fmt(bal)}</div>
+    <div class="funbank-sub">Accumulated from unused personal spend</div>
+    <div class="funbank-actions">
+      <button class="funbank-btn" data-fbwithdraw="${who}">Withdraw</button>
+    </div>
+    <div class="funbank-withdraw-form" id="fb-wf-${who}">
+      <div class="funbank-wf-row">
+        <span style="font-size:12px;color:#92400E;flex-shrink:0">$</span>
+        <input type="number" class="funbank-wf-input" id="fb-amt-${who}" placeholder="Amount" min="0" max="${bal}" />
+      </div>
+      <div class="funbank-wf-row">
+        <input type="text" class="funbank-wf-input" id="fb-note-${who}" placeholder="What for? (optional)" />
+      </div>
+      <button class="funbank-btn" data-fbconfirm="${who}" style="width:100%;background:#D97706;color:#fff;border-color:#D97706">Confirm withdrawal</button>
+    </div>
+    ${histHTML?`<div class="funbank-history">${histHTML}</div>`:''}
+  </div>`;
 }
 
 function renderInvestmentSection(who){
@@ -2768,7 +2884,8 @@ function renderPersonPanel(who){
     <div class="bucket-section-body ${sharedOpen?'':'collapsed'}" id="shared-body-${who}">
       <div class="bucket-list">${S.shared.map(b=>`<div class="bcard shared-card"><div class="btop"><span style="width:28px;text-align:center;flex-shrink:0;display:flex;align-items:center;justify-content:center">${renderIcon(b.id,b.name)}</span><span style="flex:1;font-size:13px;font-weight:500;color:#1A1A1A;padding:0 4px">${b.name}</span><span style="font-size:11px;color:#999990">total ${fmt(+b.amt||0)}</span></div><div class="bbot" style="margin-top:4px"><span class="bamt-label">Your share: ${fmt(Math.round((+b.amt||0)*myR))} / ${getPl()}</span><span class="bshare-note">edit in Combined</span></div></div>`).join('')}</div>
     </div>
-    ${renderInvestmentSection(who)}`;
+    ${renderInvestmentSection(who)}
+    ${renderFunBank(who)}`;
   setTimeout(()=>makeDonut(cid,segs.filter(s=>s.v>0),remaining),50);
   attachBucketListeners();
   attachDragSort(who);
